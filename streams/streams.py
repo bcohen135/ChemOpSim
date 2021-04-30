@@ -55,90 +55,107 @@ class MaterialStream(Stream):
             effluent and will show negative flows
     Methods:
         get and set methods
+        __calcMoleFlow : calculates the molar flow of the stream
+        __calcSpeciesFlow : calculates the mass and molar flow for each species
+        __calcAtomicFlows : calculates the mass and molar flow for each atom
+        __calcAtomicQuants : calculates the coefficient per atom in stream
         __calcMW: calculates the molecular weight of the stream
-        __calcSpeciesFlow: calculates the molar flow of each species
-        __calcAtomicFlows: cacluates the molar flow of each type of atom
-        __caclAtomQuants: calculates the number of atoms per mole of material
+        __cleanup : corrects values if no flow or bad inputs are entered when
+            initializing material stream
         copy: makes a copy of the object
         
     '''
-    def __init__(self,substances=[],moleFracs=[],moleFlow=0,isInfluent=True):
+    def __init__(self,substances=[],massFracs=[],massFlow=0,isInfluent=True):
         if not isinstance(substances,list):
             substances = []
-        super().__init__(moleFlow,isInfluent)
-        self.moleFlow = self.flow
-        self.substances = substances
-        self.moleFlow = moleFlow
-        self.__setMoleComp(substances,moleFracs)
-        self.setInOrOut(isInfluent)
+        super().__init__(massFlow,isInfluent)
+        self.massFlow = self.flow
+        self.__setMassComp(substances,massFracs)
+        self.__setMoleInfo(self.massComp)
+        if self.massFlow == 0 and self.mW == 0:
+            self.__cleanup()
         
-    def __setMoleComp(self,substances,moleFracs):
+    def __setMassComp(self,substances,massFracs):
         self.substances = substances
-        self.moleFracs = sM.recreateFracs(moleFracs)
-        self.moleComp = sM.buildCompositions(substances,moleFracs)
+        self.massFracs = massFracs
+        self.massComp = sM.buildCompositions(substances,massFracs)
+        self.__calcSpeciesFlow()
+    
+    def __setMoleInfo(self,massComp):
+        self.moleFracs,self.moleComp = sM.calcMoleComps(self.substances,
+                                                        self.speciesMoleFlow)
+        self.__calcMoleFlow()
         self.__calcMW()
-        self.__calcSpeciesFlow()
-        self.__calcAtomicQuants()
-    
-    def setInOrOut(self,isInfluent):
-        self.isInfluent = isInfluent
-        self.setMoleFlow(self.moleFlow)
-        self.moleFlow = self.flow
-    
-    def setMoleFlow(self,moleFlow):
-        super().setFlow(moleFlow)
-        self.moleFlow = self.flow
-        self.__calcSpeciesFlow()
         self.__calcAtomicFlows()
         
     def setSubstances(self,substances):
-        self.__setMoleComp(self,substances,self.moleFracs)
-        
-    def setMoleFracs(self,moleFracs):
-        self.__setMoleComp(self,self.substances,moleFracs)
-        
+        self.__setMassComp(self,substances,self.massFracs)
+        self.__setMoleInfo(self.massComp)
+    def setMassFracs(self,massFracs):
+        self.__setMassComp(self,self.substances,massFracs)
+        self.__setMoleInfo(self.massComp)
+    def setMassFlow(self,massFlow):
+        super().setFlow(massFlow)
+        self.__setMoleInfo(self.massComp)
+    def setisInfluent(self,isInfluent):
+        self.isInfluent = isInfluent
+        self.setMassFlow(self.massFlow)
+        self.massFlow = self.flow
+    
     def getSubstances(self):
         return self.substances
-    
     def getIsInfluent(self):
-        super().getIsInfluent()
-    
-    def getMoleFracs(self):
-        return self.moleFracs
-    
-    def getMoleFlow(self):
-        return self.flow
-    
-    def getMoleComp(self):
-        return self.moleComp 
-    
+        return self.isInfluent
     def getMW(self):
         return self.mW
+    def getMassFlow(self):
+        return self.massFlow
+    def getMoleFlow(self):
+        return self.moleFlow
+    def getMassFracs(self):
+        return self.massFracs
+    def getMoleFracs(self):
+        return self.moleFracs
+    def getMassComp(self):
+        return self.massComp
+    def getMoleComp(self):
+        return self.moleComp
+    def getSpeciesMassFlow(self):
+        return self.speciesMassFlow
+    def getSpeciesMoleFlow(self):
+        return self.speciesMoleFlow
+    def getAtomicMassFlow(self):
+        return self.atomicMassFlow
+    def getAtomicMoleFlow(self):
+        return self.atomicMoleFlow
     
-    def getSpeciesFlow(self):
-        return self.speciesFlow
-    
-    def getAtomQuants(self):
-        return self.atomQuants
-    
-    def getAtomicFlows(self):
-        return self.atomicFlows
-    
-    def __calcMW(self):
-        self.mW = sM.calcMixtureMW(self.substances, self.moleComp)
-        
+    def __calcMoleFlow(self):
+        self.moleFlow = sM.calcMoleFlow(self.speciesMoleFlow)
     def __calcSpeciesFlow(self):
-        self.speciesFlow = sM.calcSpeciesFlows(self.moleComp,self.moleFlow)
-    
+        self.speciesMassFlow = sM.calcSpeciesFlows(self.massComp,
+                                                   self.massFlow)
+        self.speciesMoleFlow = sM.massToMoleFlows(self.substances,
+                                                  self.speciesMassFlow)
     def __calcAtomicFlows(self):
         self.__calcAtomicQuants()
-        self.atomicFlows = sM.setAtomFlows(self.atomQuants,self.moleFlow)
-        
+        self.atomicMoleFlow = sM.setAtomFlows(self.atomQuants,
+                                               self.moleFlow)
+        self.atomicMassFlow = sM.calcAtomMassFlows(self.substances,
+                                                   self.atomicMoleFlow)
     def __calcAtomicQuants(self):
         self.atomQuants = sM.setAtomQuantities(self.substances,
-                                                 self.moleComp)
-    
+                                                   self.moleComp)
+    def __calcMW(self):
+        self.mW = sM.calcMixtureMW(self.massFlow,self.moleFlow)
+    def __cleanup(self):
+        massFlow = 1
+        speciesMassFlow = sM.calcSpeciesFlows(self.massComp,massFlow)
+        speciesMoleFlow = sM.massToMoleFlows(self.substances,speciesMassFlow)
+        moleFlow = sM.calcMoleFlow(speciesMoleFlow)
+        self.moleFracs,self.moleComp = sM.calcMoleComps(self.substances,
+                                                        speciesMoleFlow)
+        self.mW = sM.calcMixtureMW(massFlow,moleFlow)
     def copy(self):
-        moleFlow,isInfluent = sM.copy(self)
-        return MaterialStream(self.substances,self.moleFracs,moleFlow,
+        massFlow,isInfluent = sM.copy(self)
+        return MaterialStream(self.substances,self.massFracs,massFlow,
                               isInfluent)

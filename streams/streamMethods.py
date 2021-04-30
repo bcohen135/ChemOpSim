@@ -5,7 +5,8 @@ Created on Tue Apr 20 14:57:58 2021
 @author: Ben
 """
 
-from sympy import symbols,Basic
+from sympy import symbols,Basic,preorder_traversal,Float
+from materials import materialMethods as mM
 
 ###################################################
 ##########  Methods for Stream  ###################
@@ -70,7 +71,7 @@ def recreateFracs(fracs):
             if isinstance(fracs[n],str):
                 fracs[n] = symbols(fracs[n])
                 k = k+1
-        if k == 0: #No symbolic values - correct values to equal 1
+        if k == 0: 
             fracs = correctSum(fracs)
             
     return fracs
@@ -88,12 +89,18 @@ def correctSum(fracs):
     fracs : array of float64
         list of fractions that does add up to one.
     '''
-    s = sum(fracs) #Find the sum of all fractions            
-        
-    if s != 1 and not isinstance(s,Basic):
-        for k in range(0,len(fracs)):
-            fracs[k] = round(fracs[k]/s,5) #use sum to normalize everything
-                 
+    s = sum(fracs) #Find the sum of all fractions          
+    
+    for k in range(0,len(fracs)):
+        nF = fracs[k]/s
+        if isinstance(s,Basic) or isinstance(fracs[k],Basic):
+            newFrac = nF
+            for a in preorder_traversal(nF):
+                if isinstance(a,Float):
+                    newFrac = newFrac.subs(a,round(a,5))
+        else:
+            newFrac = round(nF,5)
+        fracs[k] = newFrac                 
     return fracs
 
 def buildCompositions(substances,fracs):
@@ -118,37 +125,137 @@ def buildCompositions(substances,fracs):
     
     return comp
 
-def calcMixtureMW(substances,moleComp):
+def calcMoleComps(substances,speciesMoleFlow):
+    '''
+    calcMoleComps will calculate the molar composition of the material stream
+
+    Parameters
+    ----------
+    substances : list[Species]
+        list of species present.
+    speciesMoleFlow : dict{str:Basic}
+        a dictionary of molar flow of each species in stream.
+
+    Returns
+    -------
+    moleFracs : list[Basic]
+        list of molar fractions.
+    moleComp : dict[str:Basic]
+        dictionary of molar composition.
+
+    '''
+    sMF = speciesMoleFlow
+    moleComp = {}
+    moleFracs = []
+    
+    if len(substances)!=0 and sMF!={}:
+        for spec in sMF:
+            moleFracs.append(sMF[spec])
+        moleFracs = correctSum(moleFracs)
+        k = 0
+        for spec in sMF:
+            moleComp[spec] = moleFracs[k]
+            k+=1
+    return moleFracs,moleComp
+    
+def massToMoleFlows(substances,speciesMassFlows):
+    '''
+    massToMoleFlows converts the mass flows of each species to molar
+    flows.
+
+    Parameters
+    ----------
+    substances : list[Species]
+        list of species present.
+    speciesMassFlows : dict{str:Basic}
+        dictionary of the mass flows of each species.
+
+    Returns
+    -------
+    sMoleF : dict{str:Basic}
+        dictionary of the mole flows of each species.
+
+    '''
+    sMassF = speciesMassFlows
+    sMoleF = {}
+    if len(substances) == 0 or sMassF == {}:
+        return sMoleF
+    else:
+        for s in substances:
+            mW = s.getMW()
+            thisKey = s.getFormula()
+            massFlow = sMassF[thisKey]
+            if isinstance(massFlow,str):
+                massFlow = symbols(massFlow)
+            moleFlow = massFlow/mW
+            if isinstance(moleFlow,Basic):
+                for a in preorder_traversal(moleFlow):
+                    if isinstance(a,Float):
+                        moleFlow = moleFlow.subs(a,round(a,5))
+            else:
+                moleFlow = round(moleFlow,5)
+            sMoleF[thisKey] = moleFlow
+        return sMoleF
+    
+def calcMixtureMW(massFlow,moleFlow):
     '''
     Calculate a mixture molecular weight
     Parameters
     ----------
-    substances : list of Species
-        list of species
-    moleComp : dictionary of {Speices:float64}
-        dictionary where the key is a species and the value is the fraction
-
+    massFlow : Basic
+        mass flow of material stream
+    moleFlow : Basic
+        molar flow of material stream
+        
     Returns
     -------
     streamMW : float64
         molecular weight based on mole composition of a stream or mixture
     '''
-    streamMW = 0
-    hasSymbol = False
-    if len(substances) == 0 or moleComp == {}:
-        return streamMW
+    if moleFlow == 0:
+        streamMW = 0
     else:
-        for s in substances:
-            mW = s.getMW() #Find each species molecular weight alone
-            moleFrac = moleComp.get(s.getFormula()) 
-            if isinstance(moleFrac,Basic):
-                hasSymbol = True
-            streamMW = streamMW + (mW*moleFrac) #Multiple by its mole fraction
-        if hasSymbol:
-            return streamMW
+        sMW = massFlow/moleFlow
+        if isinstance(sMW,Basic):
+            streamMW = sMW
+            for a in preorder_traversal(sMW):
+                if isinstance(a,Float):
+                    streamMW = streamMW.subs(a,round(a,5))
         else:
-            return round(streamMW,6)
+            streamMW = round(sMW,5)
         
+    return streamMW
+
+def calcMoleFlow(speciesMoleFlows):
+    '''
+    Calculates the molar flow of the material stream
+    Parameters
+    ----------
+    speciesMoleFlows : dict{str:Basic}
+        dictionary of the mole flows of each species.
+        
+    Returns
+    -------
+    moleFlow : Basic
+        molar flow of material stream
+    '''
+    sMF = speciesMoleFlows
+    mF = 0
+    if sMF == {}:
+        return mF
+    else:
+        for spec in sMF:
+            newMF = sMF[spec]
+            mF = mF + newMF
+        if isinstance(mF,Basic):
+            moleFlow = mF
+            for a in preorder_traversal(mF):
+                if isinstance(a,Float):
+                    moleFlow = moleFlow.subs(a,round(a,5))
+        else:
+            moleFlow = round(mF,5)
+        return moleFlow
+
 def calcSpeciesFlows(comp,flow):
     '''1.2
     calculates the species flow and returns a dictionary with the species
@@ -165,25 +272,25 @@ def calcSpeciesFlows(comp,flow):
         dictionary with species and flow.
     '''
     
-    thisComp = dict(comp)
+    thisFlow = dict(comp)
     if comp == {}:
-        return thisComp
+        return thisFlow
     else:
         if isinstance(flow,str):
             flow = symbols(flow)
-            for species in thisComp:
-                thisComp[species] = thisComp[species]*flow
-        elif isinstance(flow,Basic):
-            for species in thisComp:
-                thisComp[species] = thisComp[species]*flow
-        else:
-            for species in thisComp:
-                if isinstance(thisComp[species],Basic):
-                    thisComp[species] = thisComp[species]*flow
-                else:
-                    thisComp[species] = round(thisComp[species]*flow,6)
- 
-    return thisComp
+        for species in thisFlow:
+            if isinstance(thisFlow[species],str):
+                thisFlow[species] = symbols(thisFlow[species])
+            nF = thisFlow[species]*flow
+            newFlow = nF
+            if isinstance(nF,Basic):
+                for a in preorder_traversal(nF):
+                    if isinstance(a,Float):
+                        newFlow = newFlow.subs(a,round(a,5))
+            else:
+                newFlow = round(newFlow,5)
+            thisFlow[species] = newFlow
+        return thisFlow
 
 def setAtomQuantities(substances,comp):
     '''
@@ -194,6 +301,8 @@ def setAtomQuantities(substances,comp):
     ----------
     substances : list of species
         list of speices
+    comp : dict{str:Basic}
+        dictionary of either mass or molar composition
     Returns
     -------
     atomsQuant : dictionary
@@ -211,9 +320,28 @@ def setAtomQuantities(substances,comp):
             for atom in atoms:
                 atoms[atom] = atoms[atom]
             
-            atomQuant = {x:atoms.get(x,0)*frac+atomQuant.get(x,0)
-                         for x in set(atoms).union(atomQuant)}
-    
+            for x in set(atoms).union(atomQuant):
+                nQ = atoms.get(x,0)*frac+atomQuant.get(x,0)
+                if isinstance(nQ,Basic):
+                    newQuant = nQ
+                    for a in preorder_traversal(nQ):
+                        if isinstance(a,Float):
+                            newQuant = newQuant.subs(a,round(a,7))
+                else:
+                    newQuant = round(nQ,7)
+                atomQuant[x] = newQuant
+            
+    for atom in atomQuant:
+        atomNum = atomQuant[atom]
+        if isinstance(atomNum,Basic):
+            aN = atomNum
+            for a in preorder_traversal(atomNum):
+                if isinstance(a,Float):
+                    replaceVal = round(a,5)
+                    aN = aN.subs(a,replaceVal)
+        else:
+            aN = round(atomNum,5)
+        atomQuant[atom] = aN
     return atomQuant
 
 def setAtomFlows(atomQuant,flow):
@@ -223,32 +351,73 @@ def setAtomFlows(atomQuant,flow):
     atomic symbol as a key.
     Parameters
     ----------
-    substances : list of species
-        list of speices
+    atomQuant : dictionary
+        dictionary with atoms and number of atoms.
     flow : float
         flow.
     Returns
     -------
-    atomQuant : dictionary
+    atomFlow : dictionary
         dictionary with atoms and flow of atoms.
     '''
     atomFlow = {}
     if atomQuant != {}:
-        if isinstance(flow,str):
-            flow = symbols(flow)
+        if flow == 0:
             for atom in atomQuant:
-                atomFlow[atom] = atomQuant[atom]*flow
-        elif isinstance(flow,Basic):
-            for atom in atomQuant:
-                atomFlow[atom] = atomQuant[atom]*flow
+                atomFlow[atom] = 0
         else:
+            if isinstance(flow,str):
+                flow = symbols(flow)
             for atom in atomQuant:
-                if isinstance(atomQuant[atom],Basic):
-                    atomFlow[atom] = atomQuant[atom]*flow
+                nF = atomQuant[atom]*flow
+                if isinstance(nF,Basic):
+                    newFlow = nF
+                    for a in preorder_traversal(nF):
+                        if isinstance(a,Float):
+                            tempVar = round(a,5)
+                            newFlow = newFlow.subs(a,tempVar)
                 else:
-                    atomFlow[atom] = round(atomQuant[atom]*flow,6)  
+                    newFlow = round(nF,5)
+                atomFlow[atom] = newFlow
     return atomFlow
+       
+def calcAtomMassFlows(substances,atomMoleFlows):
+    '''
+    calcAtomMassFlows calculatesthe mass flow of the atoms in the material
+    stream
 
+    Parameters
+    ----------
+    substances : list[Species]
+        list of species present.
+    atomFlow : dictionary
+        dictionary with atoms and molar flow of atoms.
+
+    Returns
+    -------
+    atomFlow : dictionary
+        dictionary with atoms and mass flow of atoms.
+
+    '''
+    atomMassFlows = {}
+    if len(substances) == 0 or atomMoleFlows == {}:
+        return atomMassFlows
+    else:
+        for s in substances:
+            atoms = s.getAtoms()
+            for atom in atoms:
+                if atom not in atomMassFlows:
+                    aW = mM.getAtomicWeight(atom)
+                    nF = atomMoleFlows[atom]*aW
+                    newFlow = nF
+                    if isinstance(nF,Basic):
+                        for a in preorder_traversal(nF):
+                            if isinstance(a,Float):
+                                newFlow = newFlow.subs(a,round(a,5))
+                    else:
+                        newFlow = round(newFlow,5)
+                    atomMassFlows[atom] = newFlow
+        return atomMassFlows
 #######################################################
 #######################################################
 #######################################################
