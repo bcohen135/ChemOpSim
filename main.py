@@ -25,11 +25,11 @@ ms2 = stms.MaterialStream([water,methane,co],[0.1,0.7,0.2],5)
 ms3 = stms.MaterialStream([oxygen,nitrogen],[0.21,0.79],'q')
 ms4 = stms.MaterialStream([methane,co2,co],['x','y','z'],6)
 
-print(ms4.getAtomicFlows())
-print(ms4.getSpeciesFlow())
+print(ms4.getAtomicMassFlow())
+print(ms4.getSpeciesMassFlow())
 
 print(ms3.getMoleFlow())
-print(ms3.getSpeciesFlow())
+print(ms3.getSpeciesMassFlow())
 
 myDict1 = {'a':1,'b':4,'c':2,'e':7}
 myDict2 = {'a':3,'b':2,'c':8,'d':3}

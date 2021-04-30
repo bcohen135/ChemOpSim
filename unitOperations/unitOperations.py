@@ -86,6 +86,7 @@ class BlackBox():
         
 class UnitOperation(BlackBox):
     def __init__(self,streams=0,relations=0):
+        print('Hello')
         super().__init__(streams,relations,0) #No accumulation yet
         
         
